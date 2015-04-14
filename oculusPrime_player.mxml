@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Application xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" 	 
+				creationComplete="init()" width="640" height="480">
+	
+	<mx:Script>
+		<![CDATA[
+			import mx.controls.Alert;
+			import flash.net.NetStream;
+			import flash.media.Microphone;
+			
+			private var nc:NetConnection;	
+			private var ns1:NetStream;
+			private var ns2:NetStream;
+			private var video:Video;
+			private var connected:Boolean = false;
+//			private var camera:Camera = Camera.getCamera(); //new
+			private var mic:Microphone; // =  Microphone.getMicrophone(); //new
+//			private var mic:Microphone =  Microphone.getEnhancedMicrophone(); //new
+//			private var video2:Video;
+			public static const MSGCOLOUR:String = "#8C21B8";
+			private var rtmpPort:String;
+			private var h264Settings:H264VideoStreamSettings;
+			private var videosoundmode:String;
+			private var red5_1_orhigher:Boolean = true;
+			
+			private function init():void	{
+				//connect();
+				ExternalInterface.addCallback("flashplay", play); // called from Javascript
+				ExternalInterface.addCallback("flashCallServer", callServer); //called from Javascript
+				ExternalInterface.addCallback("connect", connect); 
+				ExternalInterface.addCallback("setRtmpPort", setRtmpPort); //called from Javascript
+				ExternalInterface.call("flashloaded");
+				ExternalInterface.addCallback("mutePlayerMic", mutePlayerMic);
+				ExternalInterface.addCallback("unmutePlayerMic", unmutePlayerMic);
+
+				var pageURL : String = ExternalInterface.call("window.location.href.toString");
+				if (pageURL.split("?")[1]!="broadcast") {
+					mic = Microphone.getMicrophone();
+					message("normal mic",MSGCOLOUR,null,null);
+				} else {
+					
+					// recommendations from http://www.adobe.com/devnet/flashplayer/articles/acoustic-echo-cancellation.html
+					mic = Microphone.getEnhancedMicrophone();
+					var options:MicrophoneEnhancedOptions = new MicrophoneEnhancedOptions();
+					options.echoPath = 128;
+					options.mode = MicrophoneEnhancedMode.HALF_DUPLEX;
+					options.nonLinearProcessing = true;
+					mic.enhancedOptions = options;
+					
+					mic.codec = SoundCodec.SPEEX;
+					mic.framesPerPacket = 1;
+					mic.setSilenceLevel(0, 2000);
+					mic.gain = 50;
+					
+					message("enhanced mic",MSGCOLOUR,null,null);
+				}
+				
+		
+			}	
+			
+			private function setRtmpPort(str:String):void {
+				rtmpPort = str;
+			}
+			
+			private function connect(passcode:String):void {		
+				//Alert.show(user + " " + pass);
+				nc = new NetConnection();
+				var urlarray:Array = ExternalInterface.call("window.location.href.toString").split("/");
+				//var a:String = "rtmp://"+ExternalInterface.call("window.location.hostname.toString")+"/"+urlarray[3]; 
+				var a:String = "rtmp://"+ExternalInterface.call("window.location.hostname.toString")+":"+rtmpPort+"/"+urlarray[3]; 
+				
+				nc.connect(a, passcode);
+				nc.addEventListener(NetStatusEvent.NET_STATUS, netStatusHandler);
+				nc.client = this;
+				nc.addEventListener("play",play);
+				nc.addEventListener("message",message);
+				nc.addEventListener("playerfunction",playerfunction);
+				nc.addEventListener("publish",publish); 
+				nc.addEventListener("videoSoundMode",videoSoundMode); // called by java after successful playersignin--set mode (depending on server/client OS)
+				nc.addEventListener("flipVideo",flipVideo); // called by java				
+				nc.call("playersignin",null); // try putting this one down
+				
+			}
+			
+			private function netStatusHandler(e:NetStatusEvent):void  {    
+				var code:String = e.info.code;    
+				if(code == "NetConnection.Connect.Success"){ 
+					connected = true;
+					ns1 = new NetStream(nc); 
+					video = new Video(); 
+					// videoSoundMode("high"); // backwards compatible testing only, will disable clients with old flash
+				}
+				if(code == "NetConnection.Connect.Closed") {
+					message("connection closed",MSGCOLOUR, "connection", "closed");
+				}
+			}
+			
+			public function videoSoundMode(mode:String):void //set codec params for video and sound
+			{
+				if (mode=="low") {
+					videosoundmode = "low"  // nelly moser audio, h263 video compression, iOS and linux flash client friendly
+					h264Settings = null; // not sure if this will work 
+					if (mic) {
+						mic.codec = SoundCodec.NELLYMOSER;
+						mic.setUseEchoSuppression(true);
+						mic.setSilenceLevel(10);
+						mic.rate = 8;
+						//message("video mode low",MSGCOLOUR, null, null);
+					}
+//					else { Alert.show("Microphone not found"); }
+				}
+				else { 
+					videosoundmode = "high" // SPEEX audio, h264 video compression
+					h264Settings = new H264VideoStreamSettings();
+					if (mic) {
+						mic.codec = SoundCodec.SPEEX;
+						mic.encodeQuality = 5;
+						mic.setUseEchoSuppression(true);
+						mic.setSilenceLevel(0); // default is 10 out of 100
+						h264Settings.setProfileLevel(H264Profile.BASELINE, H264Level.LEVEL_2); 
+						//message("video mode high",MSGCOLOUR, null, null);
+					}
+//					else { Alert.show("Microphone not found"); }
+				}
+				
+			}
+			
+			public function play(nostreams:int, scale:int):void {
+				if (connected) {
+					if (ns1) { ns1.close(); }
+					if (video) { video.clear(); }
+					if (nostreams==0) {
+						message("stream stopped",MSGCOLOUR, null, null);
+					}
+					else {
+						video.attachNetStream(ns1);
+						video.width = 640 * scale / 100;
+						video.x = (640-video.width)/2;
+						video.height = 480 * scale / 100;
+						video.y = (480-video.height)/2;
+						videoDisplay.addChild(video);
+						if (!red5_1_orhigher)  ns1.play("mp4:stream1");
+						else ns1.play("stream1");  
+						message("playing stream",MSGCOLOUR, null, null);
+					}
+				}
+			}
+			
+			private function callServer(fn:String, str:String):void {
+				if (connected) {
+					nc.call("playerCallServer", null, fn, str); 
+				}
+				//Alert.show("playerCallServer "+fn+" "+str);
+			}
+			
+			public function message(str:String, colour:String, status:String, value:String):void {
+				ExternalInterface.call("message",str,colour,status,value);
+			}
+			
+			public function playerfunction(fn:String, params:String):void {
+				ExternalInterface.call(fn,params);
+			}
+			
+			public function publish(mode:String,width:int, height:int, fps:int, quality:int, pushtotalk:Boolean):void {
+				
+				try {
+					if (ns2) { 
+						ns2.attachCamera(null); 
+						ns2.attachAudio(null); 
+						ns2.close();
+					}
+
+					if (mode != "stop") {
+//						camera.setMode(width,height,fps);
+//						camera.setQuality(0,quality);
+						ns2 = new NetStream(nc);  
+						if (videosoundmode=="high") {
+							ns2.videoStreamSettings = h264Settings;
+						}
+
+						var str:String = "";
+						if (mode == "mic") {
+							if  (pushtotalk == false) { ns2.attachAudio(mic); }
+							else { str=", push T to talk"; }
+						} 
+						message("streaming local "+mode+str,MSGCOLOUR, "selfstream", mode);
+
+						if (!red5_1_orhigher)  ns2.publish("mp4:stream2", 'live');	 
+						else ns2.publish("stream2", 'live');
+					}
+					else {  message("local stream stopped",MSGCOLOUR, "selfstream", mode); }
+				}
+				catch(err:Error) { Alert.show( err.toString() ); }
+			}
+			
+			public function mutePlayerMic():void {
+				if (mic && ns2) {
+					ns2.attachAudio(null); 
+				}
+			}
+			
+			public function unmutePlayerMic():void {
+				if (mic && ns2) {
+					ns2.attachAudio(mic);
+				}
+			}
+			
+			public function flipVideo(flip:Boolean):void {
+				if (flip) { video.scaleY = video.scaleY *-1; video.y = video.height; }
+				else { video.scaleY = video.scaleY *-1; video.y = 0;}
+			}
+			
+			
+		]]>
+	</mx:Script>	
+	<mx:VideoDisplay id="videoDisplay" x="0" y="0" autoPlay="true" width="640" height="480"  live="true" />
+	
+</mx:Application>
+
