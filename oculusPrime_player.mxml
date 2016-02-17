@@ -22,6 +22,7 @@
 			private var h264Settings:H264VideoStreamSettings;
 			private var videosoundmode:String;
 			private var red5_1_orhigher:Boolean = true;
+			private var version:String = "0.679";
 			
 			private function init():void	{
 				//connect();
@@ -32,6 +33,8 @@
 				ExternalInterface.call("flashloaded");
 				ExternalInterface.addCallback("mutePlayerMic", mutePlayerMic);
 				ExternalInterface.addCallback("unmutePlayerMic", unmutePlayerMic);
+				
+				message("swf version: "+version, MSGCOLOUR,null,null);
 
 				var pageURL : String = ExternalInterface.call("window.location.href.toString");
 				if (pageURL.split("?")[1]!="broadcast") {
