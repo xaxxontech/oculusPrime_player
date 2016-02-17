@@ -12,6 +12,7 @@
 			private var ns1:NetStream;
 			private var ns2:NetStream;
 			private var video:Video;
+			private var video2:Video;
 			private var connected:Boolean = false;
 //			private var camera:Camera = Camera.getCamera(); //new
 			private var mic:Microphone; // =  Microphone.getMicrophone(); //new
@@ -22,7 +23,7 @@
 			private var h264Settings:H264VideoStreamSettings;
 			private var videosoundmode:String;
 			private var red5_1_orhigher:Boolean = true;
-			private var version:String = "0.679";
+			private var version:String = "0.680";
 			
 			private function init():void	{
 				//connect();
@@ -91,6 +92,8 @@
 					connected = true;
 					ns1 = new NetStream(nc); 
 					video = new Video(); 
+					ns2 = new NetStream(nc); // TODO: testing 2nd channel audio
+					video2 = new Video(); // TODO: testing 2nd channel audio
 					// videoSoundMode("high"); // backwards compatible testing only, will disable clients with old flash
 				}
 				if(code == "NetConnection.Connect.Closed") {
@@ -132,18 +135,29 @@
 				if (connected) {
 					if (ns1) { ns1.close(); }
 					if (video) { video.clear(); }
+					if (ns2) { ns2.close(); }  // TODO: testing 2nd channel audio
 					if (nostreams==0) {
 						message("stream stopped",MSGCOLOUR, null, null);
 					}
 					else {
 						video.attachNetStream(ns1);
+						
+						if (nostreams==2) { // TODO: testing 2nd channel audio
+							if (ns2) ns2.close();
+							video2.attachNetStream(ns2);
+							videoDisplay2.addChild(video2);
+						}
+						
 						video.width = 640 * scale / 100;
 						video.x = (640-video.width)/2;
 						video.height = 480 * scale / 100;
 						video.y = (480-video.height)/2;
 						videoDisplay.addChild(video);
 						if (!red5_1_orhigher)  ns1.play("mp4:stream1");
-						else ns1.play("stream1");  
+						else { 
+							ns1.play("stream1");
+							if (nostreams==2) { ns2.play("stream2"); } // TODO: testing 2nd channel audio
+						}
 						message("playing stream",MSGCOLOUR, null, null);
 					}
 				}
@@ -216,7 +230,9 @@
 			
 		]]>
 	</mx:Script>	
+	<mx:VideoDisplay id="videoDisplay2" x="0" y="0" autoPlay="true" width="10" height="10"  live="true"/>
 	<mx:VideoDisplay id="videoDisplay" x="0" y="0" autoPlay="true" width="640" height="480"  live="true" />
+
 	
 </mx:Application>
 
